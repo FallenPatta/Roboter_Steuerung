@@ -124,5 +124,12 @@ void loop() {
       right_direction = 1;
     }
   }
-  
+  if(millis() - stoptime > 1000){
+    digitalWrite(D3, LOW);
+    digitalWrite(D4, LOW);
+    analogWrite(D1, 0);
+    analogWrite(D2, 0);
+    delay(5000);
+    stoptime = millis();
+  }
 }
