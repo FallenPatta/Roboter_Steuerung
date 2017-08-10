@@ -4,6 +4,8 @@ int left_direction = 1;
 int right_ticks = 0;
 int right_direction = 1;
 
+int tick_difference = 0;
+
 long stoptime = 0;
 bool driving_status = true;
 
@@ -62,6 +64,17 @@ void setMotor(char m, int value){
     default:
     break;
   }
+}
+
+void speedControl(int speed1, int speed2, int* output){
+  float proportional = 0.1;
+  float differential = 0.2;
+  float integral = 0.05;
+
+  int tick_diff = (left_ticks - right_ticks);
+  int tick_diff_diff = tick_diff - tick_difference;
+  tick_difference = tick_diff;
+  
 }
 
 void setup() {
