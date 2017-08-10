@@ -15,6 +15,55 @@ void tick_right_ISR() {
   right_ticks += right_direction;
 }
 
+void setMotors(int val1, int val2){
+  setMotor('A', val1);
+  setMotor('B', val2);
+}
+
+void setMotor(char m, int value){
+  unsigned int abs_value = abs(value);
+  switch(m){
+    case 'A':
+    case 'a':
+      if(value > 0)
+      {
+        left_direction = 1;
+        digitalWrite(D3, HIGH);
+      }
+      else if(value < 0)
+      {
+        left_direction = -1;
+        digitalWrite(D3, LOW);
+      }
+      else
+      {
+        
+      }
+      analogWrite(D1, abs_value);
+    break;
+    case 'B':
+    case 'b':
+      if(value > 0)
+      {
+        right_direction = 1;
+        digitalWrite(D4, LOW);
+      }
+      else if(value < 0)
+      {
+        right_direction = -1;
+        digitalWrite(D4, HIGH);
+      }
+      else
+      {
+        
+      }
+      analogWrite(D2, abs_value);
+    break;
+    default:
+    break;
+  }
+}
+
 void setup() {
   //pinMode(BUILTIN_LED, OUTPUT);
   pinMode(D1, OUTPUT);
@@ -42,7 +91,7 @@ void setup() {
   Serial.println("START");
 }
 
- int relative_position = 48;
+ int relative_position = 500;
  bool forward = true;
 void loop() {
 
@@ -124,7 +173,7 @@ void loop() {
       right_direction = 1;
     }
   }
-  if(millis() - stoptime > 1000){
+  if(millis() - stoptime > 20000){
     digitalWrite(D3, LOW);
     digitalWrite(D4, LOW);
     analogWrite(D1, 0);
