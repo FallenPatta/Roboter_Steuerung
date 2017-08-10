@@ -43,6 +43,7 @@ void setup() {
 }
 
  int relative_position = 48;
+ bool forward = true;
 void loop() {
 
     Serial.print("ticks (l,r): ");
@@ -53,10 +54,34 @@ void loop() {
 
   if (driving_status)
   {
-    digitalWrite(D3, HIGH);
-    digitalWrite(D4, LOW);
-    analogWrite(D1, 950);
-    analogWrite(D2, 950);
+    switch(left_direction){
+      case 1:
+          digitalWrite(D3, HIGH);
+          analogWrite(D1, 950);
+          break;
+      case -1:
+          digitalWrite(D3, LOW);
+          analogWrite(D1, 950);
+          break;
+      default:
+          digitalWrite(D3, LOW);
+          analogWrite(D1, 0);
+          break;
+    }
+    switch(right_direction){
+      case 1:
+          digitalWrite(D4, LOW);
+          analogWrite(D2, 950);
+          break;
+      case -1:
+          digitalWrite(D4, HIGH);
+          analogWrite(D2, 950);
+          break;
+      default:
+          digitalWrite(D4, LOW);
+          analogWrite(D2, 0);
+          break;
+    }
   }
   else
   {
@@ -66,20 +91,38 @@ void loop() {
     analogWrite(D2, 0);
   }
 
-  if(left_ticks < relative_position && right_ticks < relative_position)
-  {
-    driving_status = true;
+  if(left_direction != 0 || right_direction != 0){
+    if(left_ticks >= relative_position && forward)
+    {
+      left_direction = 0;
+    }
+    if(left_ticks < 0 && !forward)
+    {
+      left_direction = 0;
+    }
+    
+    if(right_ticks >= relative_position && forward)
+    {
+      right_direction = 0;
+    }
+    if(right_ticks < 0 && !forward)
+    {
+      right_direction = 0;
+    }
   }
-  else 
+  else
   {
-    driving_status = false;
-  }
-
-  if (millis() - stoptime >= 5000)
-  {
-    while(left_ticks >= relative_position) left_ticks -= relative_position;
-    while(right_ticks >= relative_position) right_ticks -= relative_position;
-    stoptime += 5000;
+    if(forward){
+      forward = false;
+      left_direction = -1;
+      right_direction = -1;
+    }
+    else
+    {
+      forward = true;
+      left_direction = 1;
+      right_direction = 1;
+    }
   }
   
 }
