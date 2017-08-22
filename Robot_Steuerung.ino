@@ -1,26 +1,31 @@
+#include <ESP8266WiFi.h>
+#include <Arduino.h>
+
 #define TICKTIMESSIZE 10
 
 //Alle Abmessungen in cm
-#define WHEEL_DIAMETER 7.0f
+#define WHEEL_DIAMETER 7.1f
 #define WHEEL_RADIUS WHEEL_DIAMETER/2.0f
-#define WHEEL_CIRC  WHEEL_DIAMETER * PI
-#define TICK_LEN  WHEEL_CIRC/48.0f
+//#define WHEEL_CIRC  WHEEL_DIAMETER * PI
+#define WHEEL_CIRC  21.4f
+#define TICK_LEN  WHEEL_CIRC/96.0f
 
 #define ROBOT_WIDTH 13.5f
 #define ROBOT_WIDTH_2 ROBOT_WIDTH/2.0f
 
-#define TICK_TRUST 0.2f
+#define TICK_TRUST 0.3f
 
-//typedef void (*VarFunc)(void);
-//
-//typedef struct {
-//  VarFunc function;
-//  long next_tick;
-//  long tick_duration;
-//} TickFunction;
-//
-//TickFunction * functions;
+const String commands[] = {"SendStatus", "Ok", "TurnOn"};
 
+const char *ssid = "CAR-WLAN";
+
+IPAddress localip(192, 168, 178, 10);
+IPAddress gateway(192, 168, 178, 1);
+IPAddress subnet(255, 255, 255, 0);
+int port = 5000;
+
+
+WiFiServer server(port);
 
 //Status Variables
 int left_ticks = 0;
@@ -45,6 +50,7 @@ long stoptime2 = 0;
 bool driving_status = true;
 
 int motor_speeds[2];
+int motor_setSpeeds[2];
 
 void tick_left_ISR() {
   long tickTime = millis();
@@ -77,7 +83,6 @@ void tick_right_ISR() {
 void calcSpeeds(double dT){
   static float last_ticks_l = 0;
   static float last_ticks_r = 0;
-  Serial.println(left_ticks-last_ticks_l);
   wheel_speeds[0] = (1.0f-TICK_TRUST) * wheel_speeds[0] 
                     + TICK_TRUST * (TICK_LEN*(left_ticks - last_ticks_l)/dT);
   last_ticks_l = left_ticks;
@@ -88,7 +93,31 @@ void calcSpeeds(double dT){
     
 }
 
+int sign(int num){
+  return num>=0?1:-1;
+}
+
 void setMotors(int val1, int val2) {
+  //starter aunabhängige motoren
+//  if(val1 != 0 && motor_speeds[0] == 0){
+//    if(val2 != 0 && motor_speeds[1] == 0){
+//        setMotor('A', sign(val1)*1024);
+//        setMotor('B', sign(val2)*1024);
+//    } else {
+//        setMotor('A', sign(val1)*1024);
+//        setMotor('B', val2);
+//    }
+//    delay(100);
+//  } else if(val2 != 0 && motor_speeds[1] == 0){
+//    if(val1 != 0 && motor_speeds[0] == 0){
+//      setMotor('A', sign(val1)*1024);
+//      setMotor('B', sign(val2)*1024);
+//    } else {
+//        setMotor('A', val1);
+//        setMotor('B', sign(val2)*1024);
+//    }
+//    delay(100);
+//  }
   setMotor('A', val1);
   setMotor('B', val2);
 }
@@ -113,6 +142,7 @@ void setMotor(char m, int value) {
 
       }
       analogWrite(D1, abs_value);
+      motor_speeds[0] = value;
       break;
     case 'B':
     case 'b':
@@ -131,6 +161,7 @@ void setMotor(char m, int value) {
 
       }
       analogWrite(D2, abs_value);
+      motor_speeds[1] = value;
       break;
     default:
       break;
@@ -143,8 +174,8 @@ void speedControl(float dT, float vSoll, float rSoll, int* output) {
   static float last_error_l = 0;
   static float last_error_r = 0;
 
-  float k_p = 2.0; //3
-  float k_d = 1.0; //3 
+  float k_p = 10.0; //3
+  float k_d = 10.0; //3 
   float k_i = 0.01; //0.01
 
   bool switch_sides = rSoll < 0;
@@ -186,6 +217,9 @@ void speedControl(float dT, float vSoll, float rSoll, int* output) {
   float dVal_r = (error_r-last_error_r) * k_d;
   integral_part_r += error_r * k_i;
   last_error_r = error_r;
+
+  integral_part_l = max(-200, min(200, integral_part_l));
+  integral_part_r = max(-200, min(200, integral_part_r));
 
 //  Serial.print("p: ");
 //  Serial.print(pVal_l);
@@ -315,6 +349,70 @@ void ticksControl(int speed1, int speed2, int* output) {
   Serial.println(tick_diff_diff);
 }
 
+//Ab hier: WIFI
+void wifiSetup() {
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.softAPConfig(localip, gateway, subnet);
+  WiFi.softAP(ssid);
+  IPAddress myIP = WiFi.softAPIP();
+//  WiFi.mode(WIFI_STA);
+//  WiFi.config(localip, gateway, subnet);
+//  WiFi.begin("Ultron", "Zu120%SICHERundMITsicherMEINichSICHER");
+//  if (WiFi.waitForConnectResult() != WL_CONNECTED) {
+//    Serial.println("Connection Failed");
+//    while (true) {}
+//  }
+
+  Serial.println("Connected.");
+  Serial.print("MAC: ");
+  Serial.println(WiFi.macAddress());
+  Serial.print("IP:  ");
+  Serial.println(WiFi.localIP());
+  Serial.print("Subnet: ");
+  Serial.println(WiFi.subnetMask());
+  Serial.print("Gateway: ");
+  Serial.println(WiFi.gatewayIP());
+  Serial.print("DNS: ");
+  Serial.println(WiFi.dnsIP());
+  Serial.print("Channel: ");
+  Serial.println(WiFi.channel());
+  Serial.print("Status: ");
+  Serial.println(WiFi.status());
+  server.begin();
+}
+
+//Ab hier: Setup und main Loops
+int ** memory_array = new int*[2]();
+void loop1(){
+  WiFiClient * working_client = NULL;
+  working_client = (WiFiClient *) (memory_array[0]);
+  long * last_message_time = NULL;
+  last_message_time = (long *) (memory_array[1]);
+  
+  if(!working_client->connected()){
+    setMotors(0, 0);
+    if(working_client != NULL){
+      delete working_client;
+      working_client = NULL;
+    }
+    *working_client = server.available();
+    return;
+  }
+
+  if(working_client->connected()){
+    if(working_client->available()){
+            int ava = working_client->available();
+      uint8_t *raw = (uint8_t*)malloc((1+ava)*sizeof(uint8_t));
+      if(working_client->connected())
+        working_client->read(raw, ava);
+      raw[ava] = '\0';
+      working_client->println("0");
+      working_client->flush();
+      free(raw);
+    }
+  }
+}
+
 void setup() {
   //pinMode(BUILTIN_LED, OUTPUT);
   pinMode(D1, OUTPUT);
@@ -338,18 +436,18 @@ void setup() {
     digitalWrite(LED_BUILTIN, LOW);
     delay(100);
   }
-  motor_speeds[0] = 950;
-  motor_speeds[1] = 950;
   stoptime = millis();
   stoptime2 = stoptime;
   Serial.println("START");
   setMotors(0, 0);
   motor_speeds[0] = 0;
   motor_speeds[1] = 0;
+  motor_setSpeeds[0] = 0;
+  motor_setSpeeds[1] = 0;
   delay(100);
 }
 
-int kurvenradius = -40.0f;
+int kurvenradius = 20.0f;
 bool forward = true;
 void loop() {
   //
@@ -379,17 +477,21 @@ void loop() {
     int speeds = 750;
     calcSpeeds(0.150f);
     int * cVal = new int[2];
-    speedControl(1.0f, 20.0f, kurvenradius, cVal);
-    motor_speeds[0] = max(0, min(motor_speeds[0]+cVal[0], 1024));
-    motor_speeds[1] = max(0, min(motor_speeds[1]+cVal[1], 1024));
+    speedControl(1.0f, 9.0f, kurvenradius, cVal);
+    motor_setSpeeds[0] = max(0, min(motor_setSpeeds[0]+cVal[0], 1024));
+    motor_setSpeeds[1] = max(0, min(motor_setSpeeds[1]+cVal[1], 1024));
     delete [] cVal;
-    setMotors(motor_speeds[0], motor_speeds[1]);
+//    if(motor_setSpeeds[0] < 600 && motor_setSpeeds[1] < 600 && (motor_speeds[0] == 0 || motor_speeds[1] == 0)){
+//    } else {
+      setMotors(motor_setSpeeds[0], motor_setSpeeds[1]);
+//    }
     stoptime2 += 150;
   }
 
-  if(millis() - stoptime > 10000){
+  if(millis() - stoptime > 1000){
     stoptime = millis();
-    kurvenradius *= -1;
+    Serial.println(left_ticks);
+    //kurvenradius *= -1;
   }
 
 //    for(int i = 0; i<TICKTIMESSIZE; i++){
