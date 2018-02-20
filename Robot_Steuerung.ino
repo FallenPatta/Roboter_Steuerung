@@ -14,19 +14,16 @@
 #define ROBOT_WIDTH 13.5f
 #define ROBOT_WIDTH_2 ROBOT_WIDTH/2.0f
 
-#define TICK_TRUST 0.1f
+#define TICK_TRUST 0.15f
 
-#define RINGBUFFERSIZE 128
+#define RINGBUFFERSIZE 512
 
-//ESP.getFreeHeap() // freier Arbeitsspeicher ##########>>> NICHT löschen, das brauchst du sowieso wieder! <<<########## 
-
-const String commands[] = {"SendStatus", "Ok", "TurnOn"};
-
-const char *ssid = "CAR-WLAN";
+//ESP.getFreeHeap() // freier Arbeitsspeicher ##########>>> NICHT löschen, das brauchst du wieder! <<<########## 
 
 Scheduler task_scheduler;
+bool lrTaskStarted = false;
 
-IPAddress localip(192, 168, 178, 35);
+IPAddress localip(192, 168, 178, 38);
 IPAddress gateway(192, 168, 178, 1);
 IPAddress subnet(255, 255, 255, 0);
 int port = 5000;
@@ -58,6 +55,10 @@ bool driving_status = true;
 int motor_speeds[2];
 int motor_setSpeeds[2];
 
+//Predeclared Functions:
+int motorCommandToSpeed();
+int motorControlTask();
+
 void tick_left_ISR() {
   long tickTime = millis();
   if(tickTime != left_ticks_times[(left_times_index-1)%TICKTIMESSIZE] && tickTime != left_ticks_times[(left_times_index-1)%TICKTIMESSIZE]+1){
@@ -76,27 +77,26 @@ void tick_right_ISR() {
   }
 }
 
-/*      if(left_ticks_times[(left_times_index-1)%TICKTIMESSIZE] != 0){
-      wheel_speeds[0] = (1.0f-TICK_TRUST) * wheel_speeds[0] 
-                        + TICK_TRUST * 1000.0f * TICK_LEN / ((tickTime-left_ticks_times[(left_times_index-1)%TICKTIMESSIZE]));
-    }
-    if(right_ticks_times[(right_times_index-1)%TICKTIMESSIZE] != 0){
-      wheel_speeds[1] = (1.0f-TICK_TRUST) * wheel_speeds[0] 
-                        + TICK_TRUST * 1000.0f * TICK_LEN / ((tickTime-right_ticks_times[(right_times_index-1)%TICKTIMESSIZE]));
-    }
-*/
-
 int clamp(int a, int minval, int maxval){
   if(a<minval) return minval;
   if(a>maxval) return maxval;
   return a;
 }
 
+float signedMax(float val1, float val2){
+  if(val1 < 0){
+    if(val2<val1) return val2;
+    return val1;
+  }
+  if(val2>val1) return val2;
+  return val1;
+}
+
 int sign(int num){
   return num>=0?1:-1;
 }
 
-int sign(float num){
+float sign(float num){
   return num>=0?1:-1;
 }
 
@@ -147,17 +147,11 @@ void setMotor(char m, int value) {
 }
 
 void setMotors(int val1, int val2) {
-//#ifdef NOMOTORS
-//  setMotor('A', 0);
-//  setMotor('B', 0);
-//#else
   setMotor('A', val1);
   setMotor('B', val2);
-//#endif
 }
 
 //Ab hier: Tasks
-
 WiFiClient * working_client = new WiFiClient();
 float kurvenradius = 30.0f;
 float geschwindigkeit = 10.0f;
@@ -166,6 +160,11 @@ bool forward = true;
 uint8_t * data_ring_buffer = new uint8_t[RINGBUFFERSIZE]();
 int ring_buffer_write_position = 0;
 int ring_buffer_read_position = 0;
+
+void clearBuffer(){
+  ring_buffer_write_position = 0;
+  ring_buffer_read_position = 0;
+}
 
 int bufferFramePosition(){
   int start_index = -1;
@@ -239,6 +238,7 @@ void frameToInstructions(uint8_t * frame, int frame_size){
     pos+=1;
   }
   pos+=1;
+
   while(frame[pos] != ',' && pos < frame_size){
     instructions[0] += (char)frame[pos];
     pos+=1;
@@ -248,35 +248,58 @@ void frameToInstructions(uint8_t * frame, int frame_size){
     instructions[1] += (char)frame[pos];
     pos+=1;
   }
-  geschwindigkeit = instructions[0].toFloat();//0;//
-  kurvenradius = instructions[1].toFloat();//0;//
-  Serial.print("G: ");
-  Serial.print(geschwindigkeit);
-  Serial.print(".");
-  Serial.print("R: ");
-  Serial.println(kurvenradius);
+  if(!lrTaskStarted && instructions[1].indexOf("LR:") >= 0){
+      String motorctrlTaskName = "motor-ctrl";
+      task_scheduler.deleteTask(motorctrlTaskName);
+      task_scheduler.addFunction(&motorCommandToSpeed, motorctrlTaskName, 150, millis(), 10);
+      lrTaskStarted = true;
+      delete [] instructions;
+      geschwindigkeit = 0.0;
+      kurvenradius = 0.0;
+      return;
+  }
+  else if(lrTaskStarted && instructions[1].indexOf("Rad:") >= 0){
+      String motorctrlTaskName = "motor-ctrl";
+      task_scheduler.deleteTask(motorctrlTaskName);
+      task_scheduler.addFunction(&motorControlTask, motorctrlTaskName, 150, millis(), 10);
+      lrTaskStarted = false;
+      delete [] instructions;
+      geschwindigkeit = 0.0;
+      kurvenradius = 400.0;
+      return;
+  }
+  instructions[0] = instructions[0].substring(4);
+  geschwindigkeit = instructions[0].toFloat();
+  if(lrTaskStarted){
+    instructions[1] = instructions[1].substring(3);
+  } else {
+    instructions[1] = instructions[1].substring(4);
+  }
+  kurvenradius = instructions[1].toFloat();
   delete [] instructions;
+//  for(int i = 0; i<frame_size; i++){
+//      Serial.print((char)frame[i]);
+//  }
+//  Serial.println("");
 }
 
-//Feedback
+//Feedback von den Motoren
 int calcSpeeds(){
-  double * dT = (double *) task_scheduler.functionalMem[0];
-  double dT_sec = (*dT)/1000.0;
+  double dT = 30.0;
+  double dT_sec = (dT)/1000.0;
   static int last_ticks_l = 0;
   static int last_ticks_r = 0;
-  float dTicks_l = (left_ticks - last_ticks_l) * sign(motor_speeds[0]);
-  float dTicks_r = (right_ticks - last_ticks_r) * sign(motor_speeds[1]);
+  float dTicks_l = (left_ticks - last_ticks_l) * sign(motor_setSpeeds[0]);
+  float dTicks_r = (right_ticks - last_ticks_r) * sign(motor_setSpeeds[1]);
   wheel_speeds[0] = (1.0f-TICK_TRUST) * wheel_speeds[0] 
-                    + TICK_TRUST * (TICK_LEN*dTicks_l/dT_sec);
+                    + TICK_TRUST * (TICK_LEN*dTicks_l/dT_sec) * sign(motor_setSpeeds[0]);
   last_ticks_l = left_ticks;
+  if(fabs(wheel_speeds[0]) < 0.1) wheel_speeds[0] = 0;
     
   wheel_speeds[1] = (1.0f-TICK_TRUST) * wheel_speeds[1] 
-                    + TICK_TRUST * (TICK_LEN*dTicks_r/dT_sec);
+                    + TICK_TRUST * (TICK_LEN*dTicks_r/dT_sec) * sign(motor_setSpeeds[1]);
   last_ticks_r = right_ticks;
-
-  Serial.print(wheel_speeds[0], DEC);
-  Serial.print(" - ");
-  Serial.println(wheel_speeds[1], DEC);
+  if(fabs(wheel_speeds[1]) < 0.1) wheel_speeds[1] = 0;
 
   return 0;
 }
@@ -288,9 +311,9 @@ void speedControl(float dT, float vSoll, float rSoll, int* output) {
   static float last_speed_l = 0;
   static float last_speed_r = 0;
 
-  float k_p = 20.0;//20.0; //3
+  float k_p = 20.0;
   float k_d = 0.0;
-  float k_i = 1.0;//1.0;//10.0
+  float k_i = 1.0;
 
   bool switch_sides = rSoll < 0;
 
@@ -303,8 +326,9 @@ void speedControl(float dT, float vSoll, float rSoll, int* output) {
 
   if(abs(rSoll) - ROBOT_WIDTH_2 <= 0.1 ){
     vInner = 0;
-    vAusser = 2.0f*vSoll;
+    vAusser = vSoll;
   }
+  
   if(abs(rSoll) >= 300){
     vInner = vSoll;
     vAusser = vSoll;
@@ -325,17 +349,45 @@ void speedControl(float dT, float vSoll, float rSoll, int* output) {
 
   float pVal_l = vLinks * k_p;
   float dVal_l = dError_l * k_d;
-  integral_part_l += error_l * k_i;
+  integral_part_l += signedMax(error_l, sign(error_l)) * k_i;
   last_speed_l = wheel_speeds[0];
 
   
   float pVal_r = vRechts * k_p;
   float dVal_r = dError_r * k_d;
-  integral_part_r += error_r * k_i;
+  integral_part_r += signedMax(error_r, sign(error_r)) * k_i;
   last_speed_r = wheel_speeds[1];
 
+  if(vSoll == 0){
+    integral_part_r *= 0.5;
+    integral_part_l *= 0.5;
+  }
+  
   output[0] = (int)(pVal_l - dVal_l + integral_part_l);
   output[1] = (int)(pVal_r - dVal_r + integral_part_r);
+}
+
+int motorCommandToSpeed() {
+
+    float kurvenfaktor = 1.0f;
+
+    motor_setSpeeds[0] = 0;
+    motor_setSpeeds[1] = 0;
+    motor_setSpeeds[0] += kurvenradius * 300.0f * kurvenfaktor;
+    motor_setSpeeds[1] -= kurvenradius * 300.0f * kurvenfaktor;
+    motor_setSpeeds[0] += geschwindigkeit * 650.0f;
+    motor_setSpeeds[1] += geschwindigkeit * 650.0f;
+
+    motor_setSpeeds[0] = clamp(motor_setSpeeds[0], -1024, 1024);
+    motor_setSpeeds[1] = clamp(motor_setSpeeds[1], -1024, 1024);
+
+    if(geschwindigkeit == 0 && kurvenradius == 0){
+      motor_setSpeeds[0] = 0;
+      motor_setSpeeds[1] = 0;
+    }
+    setMotors(motor_setSpeeds[0], motor_setSpeeds[1]);
+    return 0;
+
 }
 
 int comReadoutTask(){
@@ -344,8 +396,8 @@ int comReadoutTask(){
     int * frame_size = NULL;
     if(bufferGetFrame(&frame, &frame_size)){
       frameToInstructions(frame, *frame_size);
-      free(frame);
-      free(frame_size);
+      if (frame) free(frame);
+      if (frame_size) free(frame_size);
     }
   }
   else{
@@ -358,41 +410,26 @@ int comReadoutTask(){
   return 0;
 }
 
-//Crasht bei niedrigem Batteriestand
 int comTask(){
-//  Serial.println("1");
   if(!working_client || !working_client->connected()){
     *working_client = server.available();
   }
-//  Serial.println("2");
   if(working_client->connected()){
-//    Serial.println("3");
     if(working_client->available()){
-//      Serial.println("4");
       int available_bytes = working_client->available();
       uint8_t * raw = (uint8_t*)malloc((available_bytes)*sizeof(uint8_t));
       working_client->read(raw, available_bytes);
-//      Serial.println("5");
       writeToBuffer(raw, available_bytes);
       free(raw);
-//      Serial.println("6");
       working_client->println(".");
-      //working_client->flush();
-//      Serial.println(ESP.getFreeHeap());
-//      for(int i = 0; i <= RINGBUFFERSIZE; i++){
-//        Serial.print((char)data_ring_buffer[i]);
-//      }
-//      Serial.println();
-//      Serial.println("7");
     }
   }
   return 0;
 }
 
 int motorControlTask(){
-  
-    double * dT = (double *) task_scheduler.functionalMem[0];
-    double dT_sec = (*dT)/1000.0;
+    double dT = 150.0f;
+    double dT_sec = (dT)/1000.0;
   
     static int * cVal = new int[2];
     static int * cVal_last = new int[2];
@@ -404,13 +441,11 @@ int motorControlTask(){
     int * d_cVal = new int[2];
     d_cVal[0] = cVal[0] - cVal_last[0];
     d_cVal[1] = cVal[1] - cVal_last[1];
-//    d_cVal[0] = clamp(d_cVal[0], -50, 50);
-//    d_cVal[1] = clamp(d_cVal[1], -50, 50);
     
     cVal[0] = cVal_last[0] + d_cVal[0];
     cVal[1] = cVal_last[1] + d_cVal[1];
-    motor_setSpeeds[0] = clamp(cVal[0], 0, 1024); //motor_setSpeeds[0]+
-    motor_setSpeeds[1] = clamp(cVal[1], 0, 1024); //motor_setSpeeds[1]+
+    motor_setSpeeds[0] = clamp(cVal[0], -1024, 1024); //motor_setSpeeds[0]+
+    motor_setSpeeds[1] = clamp(cVal[1], -1024, 1024); //motor_setSpeeds[1]+
     delete [] d_cVal;
 
     if(geschwindigkeit == 0){
@@ -418,32 +453,16 @@ int motorControlTask(){
       motor_setSpeeds[1] = 0;
     }
     setMotors(motor_setSpeeds[0], motor_setSpeeds[1]);
-//    Serial.print("(");
-//    Serial.print(motor_setSpeeds[0], DEC);
-//    Serial.print(",");
-//    Serial.print(motor_setSpeeds[1], DEC);
-//    Serial.println(")");
-//    Serial.println(ESP.getFreeHeap());
     return 0;
 }
 
 //Ab hier: WIFI
 void wifiSetup() {
   Serial.println("Setting up WiFI");
-//  WiFi.mode(WIFI_AP_STA);
-//  WiFi.softAPConfig(localip, gateway, subnet);
-//  WiFi.softAP(ssid);
-//  IPAddress myIP = WiFi.softAPIP();
-  WiFi.mode(WIFI_STA);
-  //WiFi.config(localip, gateway, subnet);
+  WiFi.mode(WIFI_STA);  
+  WiFi.config(localip, gateway, subnet);
   WiFi.begin("Ultron", "Zu120%SICHERundMITsicherMEINichSICHER");
   delay(1000);
-//  if (WiFi.waitForConnectResult() != WL_CONNECTED) {
-//    Serial.println("Connection Failed");
-//    while (true) {
-//      Serial.println("Connection Failed");
-//      }
-//  }
 
   Serial.println("Connected.");
   Serial.print("MAC: ");
@@ -464,9 +483,9 @@ void wifiSetup() {
 
   //Attach Tasks
   String comTaskName = "communication";
-  task_scheduler.addFunction(&comTask, comTaskName, 10, millis(), 5, 0, 0);
+  task_scheduler.addFunction(&comTask, comTaskName, 10, millis(), 5);
   String comReadoutTaskName = "comReadout";
-  task_scheduler.addFunction(&comReadoutTask, comReadoutTaskName, 1, millis(), 7, 0, 0);
+  task_scheduler.addFunction(&comReadoutTask, comReadoutTaskName, 5, millis(), 7);
 }
 
 //Ab hier: Setup und main Loop
@@ -507,20 +526,13 @@ void setup() {
 
   //TASKS SETUP
   wifiSetup();
+  
   String motorctrlTaskName = "motor-ctrl";
-  double * arg_0 = new double();
-  *arg_0 = 150.0;
-  int ** args_0 = new int*[1];
-  args_0[0] = (int*)arg_0;
-  task_scheduler.addFunction(&motorControlTask, motorctrlTaskName, *arg_0, millis(), 10, args_0, 1);
+  task_scheduler.addFunction(&motorControlTask, motorctrlTaskName, 150, millis(), 10);
 
   
   String speedUpdateTaskName = "motor-speed";
-  double * arg_1 = new double();
-  *arg_1 = 30.0;
-  int ** args_1 = new int*[1];
-  args_1[0] = (int*)arg_1;
-  task_scheduler.addFunction(&calcSpeeds, speedUpdateTaskName, *arg_1, millis(), 50, args_1, 1);
+  task_scheduler.addFunction(&calcSpeeds, speedUpdateTaskName, 30, millis(), 50);
 }
 
 void loop() {
