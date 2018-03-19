@@ -1,0 +1,13 @@
+<launch>
+  <arg name="serial_no"    default=""/>
+  <arg name="json_file_path"  default=""/>
+  
+	<node pkg="dynamic_library_projects" type="pointCloud_node" respawn="true" name="pcl_user_node" output="screen">
+		<param name="pointcloud_topic" value="/camera/depth/color/points"/>
+	</node>
+	
+	<include file="$(find realsense2_camera)/launch/rs_camera.launch" />
+	
+	<node name="rviz" pkg="rviz" type="rviz"/>
+
+</launch>

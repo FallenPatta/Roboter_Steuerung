@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<package>
+  <name>dynamic_library_projects</name>
+  <version>0.0.0</version>
+  
+  <license>None</license>
+  
+  <maintainer email="david.bohlig@stud-mail.uni-wuerzburg.de">David B</maintainer>
+  
+  <description>The dlp package</description>
+  
+  <buildtool_depend>catkin</buildtool_depend>
+  <build_depend>roscpp</build_depend>
+  <build_depend>rospy</build_depend>
+  <run_depend>roscpp</run_depend>
+  <run_depend>rospy</run_depend>
+
+  <export>
+
+  </export>
+</package>

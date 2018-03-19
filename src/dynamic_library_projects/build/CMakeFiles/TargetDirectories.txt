@@ -1,0 +1,5 @@
+/home/david/Documents/Projects/Cpp/PrinterLib/build/CMakeFiles/edit_cache.dir
+/home/david/Documents/Projects/Cpp/PrinterLib/build/CMakeFiles/unlinked_main.dir
+/home/david/Documents/Projects/Cpp/PrinterLib/build/CMakeFiles/dll_main.dir
+/home/david/Documents/Projects/Cpp/PrinterLib/build/CMakeFiles/printlibrary.dir
+/home/david/Documents/Projects/Cpp/PrinterLib/build/CMakeFiles/rebuild_cache.dir

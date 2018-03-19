@@ -1,0 +1,13 @@
+<launch>
+  
+	<include file="$(find realsense2_camera)/launch/rs_camera.launch" />
+	
+	<include file="$(find rtabmap_ros)/launch/rtabmap.launch">
+	        <arg name="depth_topic" value="/camera/depth/image_rect_raw"/>
+	        <arg name="rgb_topic" value="/camera/color/image_raw"/>
+	        <arg name="camera_info_topic" value="/camera/color/camera_info"/>
+	        <arg name="rtabmap_args" value="--delete_db_on_start"/>
+	</include>
+
+
+</launch>
