@@ -10,6 +10,8 @@
 #include "stats.h" // Stats structure definition
 #include "utils.h" // Drawing and printing functions
 
+#include "FeatureGenerator.h"
+
 using namespace std;
 using namespace cv;
 
@@ -18,6 +20,8 @@ const double ransac_thresh = 2.5f; // RANSAC inlier threshold
 const double nn_match_ratio = 0.8f; // Nearest-neighbour matching ratio
 const int bb_min_inliers = 10; // Minimal number of inliers to draw bounding box
 const int stats_update_period = 10; // On-screen statistics are updated every 10 frames
+
+FeatureGenerator* ft_gen;
 
 namespace example {
 class Tracker
@@ -64,12 +68,12 @@ void Tracker::setFirstFrame(const Mat frame, vector<Point2f> bb, string title, S
 Mat Tracker::process(const Mat frame, Stats& stats)
 {
     TickMeter tm;
-    vector<KeyPoint> kp;
+    vector<KeyPoint>* kp = new vector<KeyPoint>;
     Mat desc;
 
     tm.start();
-    detector->detectAndCompute(frame, noArray(), kp, desc);
-    stats.keypoints = (int)kp.size();
+    detector->detectAndCompute(frame, noArray(), *kp, desc);
+    stats.keypoints = (int)(*kp).size();
 
     vector< vector<DMatch> > matches;
     vector<KeyPoint> matched1, matched2;
@@ -77,7 +81,7 @@ Mat Tracker::process(const Mat frame, Stats& stats)
     for(unsigned i = 0; i < matches.size(); i++) {
         if(matches[i][0].distance < nn_match_ratio * matches[i][1].distance) {
             matched1.push_back(first_kp[matches[i][0].queryIdx]);
-            matched2.push_back(      kp[matches[i][0].trainIdx]);
+            matched2.push_back(      (*kp)[matches[i][0].trainIdx]);
         }
     }
     stats.matches = (int)matched1.size();
@@ -154,6 +158,8 @@ int main(int argc, char **argv)
     Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create("BruteForce-Hamming");
     example::Tracker akaze_tracker(akaze, matcher);
     example::Tracker orb_tracker(orb, matcher);
+    
+    ft_gen = new FeatureGenerator(akaze);
 
     Mat frame;
     namedWindow(video_name, WINDOW_NORMAL);

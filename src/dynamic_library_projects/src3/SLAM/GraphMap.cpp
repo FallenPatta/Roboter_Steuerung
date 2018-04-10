@@ -79,9 +79,9 @@ namespace mapper{
 					}
 				}
 				
-				std::cout << "indices: " << nearest_points_indices.size() << std::endl;
-				std::cout << "sparse cloud size: " << sparse_cloud.size() << std::endl;
-				std::cout << "KD size: " << kdtree_cloud->size() << std::endl;
+				//~ std::cout << "indices: " << nearest_points_indices.size() << std::endl;
+				//~ std::cout << "sparse cloud size: " << sparse_cloud.size() << std::endl;
+				//~ std::cout << "KD size: " << kdtree_cloud->size() << std::endl;
 				
 				if(sparse_cloud.size() > 0 && kdtree_cloud->size() > 0){
 					pcl::PointCloud<pcl::PointXYZ>::iterator iter = (*kdtree_cloud).begin();

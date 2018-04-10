@@ -15,14 +15,26 @@ if (OPENMP_FOUND)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
 endif()
 
-find_package(catkin REQUIRED COMPONENTS roscpp roslib tf message_generation sensor_msgs std_msgs cmake_modules pcl_conversions pcl_ros)
+find_package(OpenCV REQUIRED)
+find_package(CUDA REQUIRED)
+find_package(catkin REQUIRED COMPONENTS roscpp roslib tf message_generation sensor_msgs std_msgs cmake_modules pcl_conversions pcl_ros cv_bridge realsense2)
 
 catkin_package(
+
 )
 
 include_directories(
   ${catkin_INCLUDE_DIRS}
 )
+
+#CUDA
+
+SET(CUDA_NVCC_FLAGS CACHE STRING "nvcc flags" FORCE)
+SET (CUDA_VERBOSE_BUILD ON CACHE BOOL "nvcc verbose" FORCE)
+SET(LIB_TYPE STATIC) 
+CUDA_ADD_LIBRARY(TestLib ${LIB_TYPE} src3/CUDA/PCLTransform.cu)
+
+#CUDA
 
 add_executable(unlinked_main src2/main.cpp)
 
@@ -30,7 +42,7 @@ add_executable(dll_main src1/dynamicLoad.cpp src1/VariablePrinterObject.cpp src1
 
 add_executable(pointCloud_node src3/point_cloud_reader_node.cpp
 src3/SLAM/Mapper.cpp src3/SLAM/Localizer.cpp src3/SLAM/PoseEstimator.cpp
-src3/SLAM/ICP.cpp src3/SLAM/KalmanFilter.cpp src3/SLAM/GraphMap.cpp)
+src3/SLAM/ICP.cpp src3/SLAM/GraphMap.cpp src3/SLAM/FeatureGenerator.cpp)
 
 add_library(printlibrary SHARED
     src1/MessagePrinter.cpp
@@ -52,4 +64,4 @@ include_directories(pointCloud_node PRIVATE src3)
 
 target_link_libraries(dll_main dl)
 
-target_link_libraries(pointCloud_node ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
+target_link_libraries(pointCloud_node ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} TestLib)
