@@ -43,6 +43,7 @@ add_executable(dll_main src1/dynamicLoad.cpp src1/VariablePrinterObject.cpp src1
 add_executable(pointCloud_node src3/point_cloud_reader_node.cpp
 src3/SLAM/Mapper.cpp src3/SLAM/Localizer.cpp src3/SLAM/PoseEstimator.cpp
 src3/SLAM/ICP.cpp src3/SLAM/GraphMap.cpp src3/SLAM/FeatureGenerator.cpp)
+#src3/SLAM/SLAMNode.cpp src3/SLAM/SLAMGraph.cpp
 
 add_library(printlibrary SHARED
     src1/MessagePrinter.cpp
