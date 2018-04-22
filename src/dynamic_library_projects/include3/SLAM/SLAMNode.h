@@ -16,35 +16,42 @@
 #include <opencv2/calib3d.hpp>
 #include <opencv2/highgui.hpp>
 
-enum COLOR{
-	red,
-	black
-};
-
 namespace mapping{
+	
+	enum COLOR{
+		red,
+		black
+	};
 	
 	class SLAMNode{
 		public:
 			SLAMNode();
+			SLAMNode(pcl::PointCloud<pcl::PointXYZ>::Ptr, Eigen::Matrix4f, cv::Mat, std::vector<cv::KeyPoint>, cv::Mat);
 			virtual ~SLAMNode();
+			
 			pcl::PointCloud<pcl::PointXYZ>::Ptr getCloud();
 			std::shared_ptr<Eigen::Matrix4f> getPose();
 			std::shared_ptr<cv::Mat> getImage();
 			std::shared_ptr<std::vector<cv::KeyPoint>> getKeypoints();
 			std::shared_ptr<cv::Mat> getDescriptors();
+			
 			void setCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr);
 			void setPose(std::shared_ptr<Eigen::Matrix4f>);
 			void setImage(std::shared_ptr<cv::Mat>);
 			void setKeypoints(std::shared_ptr<std::vector<cv::KeyPoint>>);
 			void setDescriptors(std::shared_ptr<cv::Mat>);
+			
 		protected:
-			pcl::PointCloud<pcl::PointXYZ>::Ptr node_cloud_;
+			pcl::PointCloud<pcl::PointXYZ>::Ptr node_cloud;
 			std::shared_ptr<Eigen::Matrix4f> node_pose;
 			std::shared_ptr<cv::Mat> node_image;
 			std::shared_ptr<std::vector<cv::KeyPoint>> node_keypoints;
 			std::shared_ptr<cv::Mat> node_descriptors;
 			
-			std::vector<std::shared_ptr<SLAMNode*>> connectedNodes;
+			double keypoint_vector[2];
+			double keypoint_unit;
+			
+			std::vector<std::shared_ptr<SLAMNode*>> loop_closures;
 			COLOR color;
 		
 	};

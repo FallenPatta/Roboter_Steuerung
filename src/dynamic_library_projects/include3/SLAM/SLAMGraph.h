@@ -20,13 +20,14 @@ namespace mapping{
 		public:
 			SLAMGraph();
 			virtual ~SLAMGraph();
-			void addNode(SLAMNode*);
-			void removeNode(SLAMNode*);
+			void addNode(SLAMNode);
+			void addNode(std::shared_ptr<SLAMNode>);
+			void removeNode(std::shared_ptr<SLAMNode>);
 			void clear();
-			std::vector<std::shared_ptr<SLAMNode*>> find_corresponding(SLAMNode*);
+			std::vector<std::shared_ptr<SLAMNode>> find_corresponding(SLAMNode&, int);
 		protected:
 			cv::FlannBasedMatcher node_matcher;
-			std::vector<std::shared_ptr<SLAMNode*>> nodes;
+			std::vector<std::shared_ptr<SLAMNode>> nodes;
 	};
 	
 } //namespace mapping

@@ -51,6 +51,8 @@
 #include "SLAM/Mapper.h"
 #include "SLAM/ICP.h"
 #include "SLAM/GraphMap.h"
+#include <SLAM/SLAMNode.h>
+#include <SLAM/SLAMGraph.h>
 
 struct PointXYZ{
 	float x,y,z,u;
@@ -74,8 +76,9 @@ std::pair<ros::Time, std::shared_ptr<cv::Mat>> current_color_frame_;
 int frameNum = 0;
 
 //~ std::shared_ptr<FeatureGenerator> color_feature_generator;
-cv::Ptr<cv::AKAZE> color_feature_generator;
-const double akaze_color_thresh = 1e-2;
+//~ cv::Ptr<cv::AKAZE> color_feature_generator;
+cv::Ptr<cv::Feature2D> color_feature_generator;
+const double akaze_color_thresh = 1e-3;
 
 std::mutex producer_mutex_;
 std::condition_variable producer_notification;
@@ -229,9 +232,33 @@ void match_and_display(cv::Mat image1, cv::Mat image2){
 	std::vector<cv::KeyPoint> keypoints2;
 	cv::Mat descriptors2;
 	color_feature_generator->detectAndCompute(image2, cv::noArray(), keypoints2, descriptors2);
-					
+	
 	if(keypoints2.size() < 2)
 		return;
+	
+	//~ double keypoint_vector1[2];
+	//~ double keypoint_unit1 = 0;
+	//~ keypoint_vector1[0] = 0;
+	//~ keypoint_vector1[1] = 0;
+	//~ for(cv::KeyPoint k : keypoints1)
+	//~ {
+		//~ keypoint_vector1[0] += cos(k.angle);
+		//~ keypoint_vector1[1] += sin(k.angle);
+	//~ }
+	//~ keypoint_unit1 = sqrt(pow(keypoint_vector1[0],2) + pow(keypoint_vector1[1],2));
+	
+	//~ double keypoint_vector2[2];
+	//~ double keypoint_unit2 = 0;
+	//~ keypoint_vector2[0] = 0;
+	//~ keypoint_vector2[1] = 0;
+	//~ for(cv::KeyPoint k : keypoints2)
+	//~ {
+		//~ keypoint_vector2[0] += cos(k.angle);
+		//~ keypoint_vector2[1] += sin(k.angle);
+	//~ }
+	//~ keypoint_unit2 = sqrt(pow(keypoint_vector2[0],2) + pow(keypoint_vector2[1],2));
+	
+	//~ std::cout << "HyperKeypoint Difference: " << keypoint_unit1 - keypoint_unit2 << std::endl;
 					
 	if(descriptors1.type() != CV_32F)
 	{
@@ -252,20 +279,29 @@ void match_and_display(cv::Mat image1, cv::Mat image2){
 	std::vector<cv::DMatch> matches;
 	matcher.match(descriptors1, descriptors2, matches);
 	
-	int mindist = 100;
+	double mindist = 10000;
+	
 	for(cv::DMatch match : matches)
 	{
 		if(match.distance < mindist)
 			mindist = match.distance;
 	}
 	
-	if(mindist == 100){
+	if(mindist >= 100){
 		cv::waitKey(1);
 		return;
 	}
+		
+	std::vector<cv::DMatch> good_matches;
+	
+	for(cv::DMatch match : matches)
+	{
+		if(match.distance <= std::max(2*mindist, 0.05))
+			good_matches.push_back(match);
+	}
 			
 	cv::Mat img_matches;
-	drawMatches(image1, keypoints1, image2, keypoints2, matches, img_matches, cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS );
+	drawMatches(image1, keypoints1, image2, keypoints2, good_matches, img_matches, cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS );
 	cv::imshow( "Good Matches", img_matches);
 	cv::waitKey(1);
 }
@@ -291,8 +327,10 @@ int main(int argc, char** argv){
 	pointcloud_publisher_2_ = nh.advertise<sensor_msgs::PointCloud2>("/reference_debug_cloud", 1);
 	pointcloud_publisher_3_ = nh.advertise<sensor_msgs::PointCloud2>("/registered_debug_cloud", 1);
 	
-	color_feature_generator = cv::AKAZE::create();
-	color_feature_generator->setThreshold(akaze_color_thresh);
+	//~ cv::Ptr<cv::AKAZE> akaze_generator = cv::AKAZE::create();
+	//~ akaze_generator->setThreshold(akaze_color_thresh);
+	//~ color_feature_generator = akaze_generator;
+	color_feature_generator = cv::ORB::create();
 	
 	pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp_matcher;
 	//~ pcl::IterativeClosestPointNonLinear<pcl::PointXYZ, pcl::PointXYZ> icp_matcher;
@@ -325,21 +363,25 @@ int main(int argc, char** argv){
 	pose_matrix(0,2) = 0; pose_matrix(1,2) = 0; pose_matrix(2,2) = 1; pose_matrix(3,2) = 0;
 	pose_matrix(0,3) = 0; pose_matrix(1,3) = 0; pose_matrix(2,3) = 0; pose_matrix(3,3) = 1;
 	
+	
+	mapping::SLAMGraph graph;
+	int graphAddition = 0;
+	
 	cv::Mat first_image;
 	while(ros::ok())
 	{
 		//IMAGE MATCHING
 		
-		if(frameNum >= 100 && firstFrame)
-		{
-			first_image = *(current_color_frame_.second);
-			firstFrame = false;
-		}
+		//~ if(frameNum >= 100 && firstFrame)
+		//~ {
+			//~ first_image = *(current_color_frame_.second);
+			//~ firstFrame = false;
+		//~ }
 		
-		if(!firstFrame)
-		{
-			match_and_display(first_image, *current_color_frame_.second);
-		}
+		//~ if(!firstFrame)
+		//~ {
+			//~ match_and_display(first_image, *current_color_frame_.second);
+		//~ }
 
 		//-IMAGE MATCHING
 		
@@ -361,7 +403,7 @@ int main(int argc, char** argv){
 					pcl::PointCloud<pcl::PointXYZ>::Ptr sparse_input(new pcl::PointCloud<pcl::PointXYZ>);
 					pcl::PointCloud<pcl::PointXYZ>::Ptr sparse_target(new pcl::PointCloud<pcl::PointXYZ>);
 					
-					sparse_ification(current_pointcloud.second, sparse_input, 1000);
+					sparse_ification(current_pointcloud.second, sparse_input, 500);
 					//~ sparse_ification(first_pointcloud, sparse_target);
 					
 					transform_cloud_by_matrix(sparse_input, pose_matrix);
@@ -405,6 +447,8 @@ int main(int argc, char** argv){
 						
 					}
 					
+					candidate_clouds.push_front(*(transformed_pointclouds.end()-1));
+					
 					pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_source_registered(new pcl::PointCloud<pcl::PointXYZ>);
 					Eigen::Matrix4f transform_matrix;
 					double fitness = 100;
@@ -423,7 +467,7 @@ int main(int argc, char** argv){
 							sparse_target = (*it).second;
 						}
 						
-						std::cout << fitness << std::endl;
+						//~ std::cout << fitness << std::endl;
 						
 						if(fitness < 2.0e-2)
 						{
@@ -432,10 +476,6 @@ int main(int argc, char** argv){
 						
 					}
 					
-					std::cout << "ICP remaining Error: " << fitness << std::endl;
-										
-					//~ std::cout << transform_matrix << std::endl;
-					
 					publishCloud2(*sparse_target);
 					publishCloud3(*cloud_source_registered);
 					
@@ -443,11 +483,33 @@ int main(int argc, char** argv){
 					{
 						pose_matrix = transform_matrix * pose_matrix;
 						transformed_pointclouds.push_back(std::pair<Eigen::Matrix4f, pcl::PointCloud<pcl::PointXYZ>::Ptr>(pose_matrix, cloud_source_registered));
-						//~ *first_pointcloud = *current_pointcloud.second;
 						map_pointcloud += *cloud_source_registered;
-						//~ *first_pointcloud = map_pointcloud;
 						
-						publishCloud1(map_pointcloud);
+						//~ publishCloud1(map_pointcloud);
+						if(graphAddition % 10 == 0)
+						{
+							std::unique_lock<std::mutex> lock_for_scope1(color_image_mutex);
+							std::vector<cv::KeyPoint> keypoints;
+							cv::Mat descriptors;
+							color_feature_generator->detectAndCompute(*(current_color_frame_.second), cv::noArray(), keypoints, descriptors);
+							
+							if(descriptors.type() != CV_32F)
+							{
+								descriptors.convertTo(descriptors, CV_32F);
+							}
+							
+							std::shared_ptr<mapping::SLAMNode> newNode(new mapping::SLAMNode(transformed_pointclouds.back().second
+								, transformed_pointclouds.back().first
+								, *(current_color_frame_.second)
+								, keypoints
+								, descriptors));
+							
+							int correspondences = graph.find_corresponding(*newNode, 5).size();
+							
+							graph.addNode(newNode);
+							
+							std::cout << "adding new node with " << correspondences << " correspondences" << std::endl;
+						}
 					}
 				}
 				else
@@ -466,6 +528,7 @@ int main(int argc, char** argv){
 				
 				production_possible = true;
 				producer_notification.notify_all();
+				graphAddition += 1;
 			}
 			if(pointclouds.size() == 0)
 			{
