@@ -2,11 +2,25 @@
 #include <cuda.h>
 #include <time.h>
 
+#include <iostream>
+
+#define HANDLE_ERROR( err ) ( HandleError( err, __FILE__, __LINE__ ) )
+
+static void HandleError( cudaError_t err, const char *file, int line )
+{
+    if (err != cudaSuccess)
+      {
+        printf( "%s in %s at line %d\n", cudaGetErrorString( err ),
+                file, line );
+        exit( EXIT_FAILURE );
+    }
+}
+
 //#include <pcl/point_types.h>
 
-struct PointXYZ{
+typedef struct{
 	float x,y,z,u;
-};
+}PointXYZ;
 
 //~ struct Mat_Structure{
 	//~ float _11_, _21_, _31_, _41_;
@@ -60,26 +74,6 @@ void transform_kernel(PointXYZ *vec, float *mat, int problem_size){
 	}
 }
 
-//~ __global__
-//~ void transform_kernel2(PointXYZ *vec, Mat_Structure mat, int problem_size){
-    //~ int tid = blockDim.x * blockIdx.x + threadIdx.x; //threadIdx.x;
-	
-	//~ if(tid < problem_size)
-	//~ {
-		//~ float x = 0;
-		//~ float y = 0;
-		//~ float z = 0;
-		
-		//~ x = vec[tid].x * mat._11_ + vec[tid].y * mat._12_ + vec[tid].z * mat._13_ + mat._14_;
-		//~ y = vec[tid].x * mat._21_ + vec[tid].y * mat._22_ + vec[tid].z * mat._23_ + mat._24_;
-		//~ z = vec[tid].x * mat._31_ + vec[tid].y * mat._32_ + vec[tid].z * mat._33_ + mat._34_;
-		
-		//~ vec[tid].x = x;
-		//~ vec[tid].y = y;
-		//~ vec[tid].z = z;
-	//~ }
-//~ }
-
 
 int testmain(float* vector_array, float* result_array, const int array_size, float* mat_4x4) {
 	float *dev_array, *dev_mat, *dev_result;
@@ -91,7 +85,7 @@ int testmain(float* vector_array, float* result_array, const int array_size, flo
 	cudaMemcpy(dev_array, vector_array, sizeof(float)*4*array_size, cudaMemcpyHostToDevice);
 	cudaMemcpy(dev_mat, mat_4x4, sizeof(float)*16, cudaMemcpyHostToDevice);
 
-    printf("\n\nRunning Kernel...\n\n");
+    //~ printf("\n\nRunning Kernel...\n\n");
 	//kernel<<<1, array_size>>>(dev_array, dev_mat, dev_result);
 	// Invoke kernel
 	int threadsPerBlock = 1024;
@@ -109,6 +103,40 @@ int testmain(float* vector_array, float* result_array, const int array_size, flo
 
 
 int point_transform(PointXYZ * points, const int array_size, float* mat_4x4) {
+	
+	//~ printf("\n\nRunning Kernel...\n\n");
+	
+	PointXYZ *dev_array;
+	float *dev_mat;
+
+	HANDLE_ERROR(cudaMalloc(&dev_array, sizeof(PointXYZ)*array_size));
+	HANDLE_ERROR(cudaMalloc(&dev_mat, sizeof(float)*16));
+	
+	//~ cudaMalloc((void**)&dev_array, sizeof(PointXYZ)*array_size);
+	//~ cudaMalloc((void**)&dev_mat, sizeof(float)*16);
+
+	//~ std::cout << "cudalib: (" << points[0].x << "," << points[0].y << "," << points[0].z << ")" << std::endl;
+
+	HANDLE_ERROR(cudaMemcpy(dev_array, points, sizeof(PointXYZ)*array_size, cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpy(dev_mat, mat_4x4, sizeof(float)*16, cudaMemcpyHostToDevice));
+
+	// Invoke kernel
+	//~ int threadsPerBlock = 128;
+	//~ int blocksPerGrid = (array_size + threadsPerBlock - 1) / threadsPerBlock;
+	//~ transform_kernel<<<blocksPerGrid, threadsPerBlock>>>(dev_array, dev_mat, array_size);
+	transform_kernel<<<16, 128>>>(dev_array, dev_mat, array_size);
+
+	HANDLE_ERROR(cudaMemcpy(points, dev_array, sizeof(PointXYZ)*array_size, cudaMemcpyDeviceToHost));
+
+	//~ std::cout << "cudalib after: (" << points[0].x << "," << points[0].y << "," << points[0].z << ")" << std::endl;
+
+	cudaFree(dev_array);
+	cudaFree(dev_mat);
+
+	return 0;
+};
+
+int point_transform3(PointXYZ * points, const int array_size, PointXYZ * result_points, float* mat_4x4) {
 	PointXYZ *dev_array;
 	float *dev_mat;
 
@@ -123,7 +151,7 @@ int point_transform(PointXYZ * points, const int array_size, float* mat_4x4) {
 	int blocksPerGrid = (array_size + threadsPerBlock - 1) / threadsPerBlock;
 	transform_kernel<<<blocksPerGrid, threadsPerBlock>>>(dev_array, dev_mat, array_size);
 
-	cudaMemcpy(points, dev_array, sizeof(PointXYZ)*array_size, cudaMemcpyDeviceToHost);
+	cudaMemcpy(result_points, dev_array, sizeof(PointXYZ)*array_size, cudaMemcpyDeviceToHost);
 
 	cudaFree(dev_array);
 	cudaFree(dev_mat);

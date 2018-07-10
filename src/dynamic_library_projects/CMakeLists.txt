@@ -17,7 +17,13 @@ endif()
 
 find_package(OpenCV REQUIRED)
 find_package(CUDA REQUIRED)
-find_package(catkin REQUIRED COMPONENTS roscpp roslib tf message_generation sensor_msgs std_msgs cmake_modules pcl_conversions pcl_ros cv_bridge realsense2)
+
+#OPENCL
+find_package(OpenCL REQUIRED)
+include_directories(${OpenCL_INCLUDE_DIRS})
+link_directories(${OpenCL_LIBRARY})
+
+find_package(catkin REQUIRED COMPONENTS roscpp roslib tf tf_conversions message_generation sensor_msgs std_msgs cmake_modules pcl_conversions pcl_ros cv_bridge realsense2)
 
 catkin_package(
 
@@ -43,8 +49,8 @@ add_executable(dll_main src1/dynamicLoad.cpp src1/VariablePrinterObject.cpp src1
 add_executable(pointCloud_node src3/point_cloud_reader_node.cpp
 src3/SLAM/Mapper.cpp src3/SLAM/Localizer.cpp src3/SLAM/PoseEstimator.cpp
 src3/SLAM/ICP.cpp src3/SLAM/GraphMap.cpp src3/SLAM/FeatureGenerator.cpp
-src3/SLAM/SLAMNode.cpp src3/SLAM/SLAMGraph.cpp)
-#src3/SLAM/SLAMNode.cpp src3/SLAM/SLAMGraph.cpp
+src3/SLAM/SLAMNode.cpp src3/SLAM/SLAMGraph.cpp src3/SLAM/SLAMMatch.cpp src3/Util/MatrixInterpolator.cpp
+src3/Util/PointCloudDisplay.hpp )
 
 add_library(printlibrary SHARED
     src1/MessagePrinter.cpp
@@ -66,4 +72,6 @@ include_directories(pointCloud_node PRIVATE src3)
 
 target_link_libraries(dll_main dl)
 
-target_link_libraries(pointCloud_node ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} TestLib)
+target_link_libraries(pointCloud_node ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenCL_LIBRARY} TestLib)
+
+target_link_libraries(unlinked_main ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})

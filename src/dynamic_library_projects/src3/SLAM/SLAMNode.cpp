@@ -42,6 +42,8 @@ namespace mapping{
 			keypoint_vector[1] += sin(k.angle);
 		}
 		keypoint_unit = sqrt(pow(keypoint_vector[0],2) + pow(keypoint_vector[1],2));
+		setTranslationCovariance(std::make_shared<Eigen::Matrix4f>(Eigen::Matrix4f::Zero()));
+		setRotationCovariance(std::make_shared<Eigen::Matrix4f>(Eigen::Matrix4f::Zero()));
 	}
 	
 	SLAMNode::~SLAMNode(){
@@ -54,6 +56,14 @@ namespace mapping{
 	
 	std::shared_ptr<Eigen::Matrix4f> SLAMNode::getPose(){
 		return node_pose;
+	}
+	
+	std::shared_ptr<Eigen::Matrix4f> SLAMNode::getTranslationCovariance(){
+		return node_translation_covariance;
+	}
+	
+	std::shared_ptr<Eigen::Matrix4f> SLAMNode::getRotationCovariance(){
+		return node_rotation_covariance;
 	}
 	
 	std::shared_ptr<cv::Mat> SLAMNode::getImage(){
@@ -74,6 +84,14 @@ namespace mapping{
 	
 	void SLAMNode::setPose(std::shared_ptr<Eigen::Matrix4f> pose){
 		node_pose = pose;
+	}
+	
+	void SLAMNode::setTranslationCovariance(std::shared_ptr<Eigen::Matrix4f> pose_covariance){
+		node_translation_covariance = pose_covariance;
+	}
+	
+	void SLAMNode::setRotationCovariance(std::shared_ptr<Eigen::Matrix4f> pose_covariance){
+		node_rotation_covariance = pose_covariance;
 	}
 	
 	void SLAMNode::setImage(std::shared_ptr<cv::Mat> image){

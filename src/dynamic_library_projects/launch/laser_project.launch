@@ -3,7 +3,7 @@
   <arg name="json_file_path"  default=""/>
   
   <!-- launch-prefix="xterm -e gdb -args" -->
-	<node pkg="dynamic_library_projects" type="pointCloud_node" respawn="true" name="pcl_user_node" output="screen">
+	<node pkg="dynamic_library_projects" type="pointCloud_node" respawn="false" name="pcl_user_node" output="screen" launch-prefix="xterm -e gdb --args">
 		<param name="pointcloud_topic" value="/camera/depth/color/points"/>
 	</node>
 	
